@@ -139,8 +139,9 @@
     .stack { color: var(--text-2); font-size: 15px; line-height: 1.9; }
     .stack span { color: var(--muted); }
 
-    footer { padding: 72px 0 56px; }
+    footer { padding: 96px 0 0; overflow: hidden; }
     footer .wrap { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; color: var(--faint); font-size: 13px; }
+    .glyph-word { display: block; width: 100%; margin-top: 28px; touch-action: pan-y; }
 
     @media (prefers-reduced-motion: reduce) { .track { animation: none; } }
   </style>
@@ -300,6 +301,7 @@
 
   <footer>
     <div class="wrap"><span>© <span id="year">2026</span> Patrick</span><span class="mono">patrick-mns.github.io</span></div>
+    <canvas class="glyph-word" id="glyph-word" role="img" aria-label="PATRICK"></canvas>
   </footer>
 
   <script>
@@ -350,6 +352,114 @@
       var d = window.LOGOS && window.LOGOS[el.dataset.logo];
       if (d) el.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="' + d + '"/></svg>';
     });
+    // Footer: giant PATRICK drawn as a grid of glyphs. Cells inside the letters
+    // scramble slowly; the pointer pushes glyphs away (swarm) and they spring back.
+    (function () {
+      var cv = document.getElementById('glyph-word');
+      if (!cv || !cv.getContext) return;
+      var ctx = cv.getContext('2d');
+      var WORD = 'PATRICK';
+      var CURVE = 0.07; // bend depth as a fraction of width; 0 = flat
+      var DENSE = 'PATRICK#%&@*+=/<>01';
+      var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      var cells = [], cell = 10, cols = 0, rows = 0, W = 0, H = 0, dpr = 1;
+      var ptr = { x: -1e4, y: -1e4 }, colText = '#000', colFaint = '#aaa', visible = true, frame = 0;
+
+      function readColors() {
+        var cs = getComputedStyle(document.documentElement);
+        colText = cs.getPropertyValue('--text').trim() || '#000';
+        colFaint = cs.getPropertyValue('--faint').trim() || '#aaa';
+      }
+      function pick(s) { return s[(Math.random() * s.length) | 0]; }
+
+      function build() {
+        W = cv.parentElement.clientWidth;
+        cell = W < 640 ? 5 : W < 1100 ? 8 : 10;
+        cols = Math.floor(W / cell);
+        // Rasterize the word into a cols x rows mask, fitted to the width.
+        var m = document.createElement('canvas').getContext('2d');
+        var fs = 100; m.font = '600 ' + fs + 'px Inter, system-ui, sans-serif';
+        var tw = m.measureText(WORD).width;
+        fs = fs * (cols * 0.98) / tw;
+        rows = Math.ceil(fs * 0.78);
+        m.canvas.width = cols; m.canvas.height = rows;
+        m.font = '600 ' + fs + 'px Inter, system-ui, sans-serif';
+        m.textBaseline = 'alphabetic'; m.textAlign = 'center';
+        m.fillStyle = '#000';
+        m.fillText(WORD, cols / 2, rows - 1);
+        var data = m.getImageData(0, 0, cols, rows).data;
+        // Curve: edges pulled up while every letter keeps its feet on the floor.
+        var amp = W * CURVE, half = W / 2;
+        H = rows * cell + amp;
+        dpr = Math.min(window.devicePixelRatio || 1, 2);
+        cv.width = W * dpr; cv.height = H * dpr; cv.style.height = H + 'px';
+        cells = [];
+        for (var y = 0; y < rows; y++) for (var x = 0; x < cols; x++) {
+          var a = data[(y * cols + x) * 4 + 3];
+          var inside = a > 110;
+          if (!inside && Math.random() > 0.06) continue; // sparse dust outside the letters
+          var hx = x * cell + cell / 2, u = (hx - half) / half;
+          var top = amp * (1 - u * u), frac = (y * cell + cell / 2) / (rows * cell);
+          var hy = top + frac * (H - top);
+          var rot = Math.atan(-2 * amp * u / half * (1 - frac));
+          cells.push({ hx: hx, hy: hy, x: hx, y: hy, vx: 0, vy: 0, inside: inside, cos: Math.cos(rot), sin: Math.sin(rot), g: inside ? pick(DENSE) : '·' });
+        }
+        readColors();
+        draw();
+      }
+
+      function draw() {
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.clearRect(0, 0, W, H);
+        ctx.font = Math.round(cell * (W < 640 ? 1.05 : 1.1)) + "px 'JetBrains Mono', ui-monospace, monospace";
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        function put(c) {
+          // Rotate each glyph along the curve's tangent.
+          ctx.setTransform(dpr * c.cos, dpr * c.sin, -dpr * c.sin, dpr * c.cos, dpr * c.x, dpr * c.y);
+          ctx.fillText(c.g, 0, 0);
+        }
+        ctx.fillStyle = colFaint;
+        for (var i = 0; i < cells.length; i++) if (!cells[i].inside) put(cells[i]);
+        ctx.fillStyle = colText;
+        for (var j = 0; j < cells.length; j++) if (cells[j].inside) put(cells[j]);
+      }
+
+      function step() {
+        if (visible) {
+          frame++;
+          if (frame % 30 === 0) readColors();
+          var R = cell * 9, R2 = R * R;
+          for (var i = 0; i < cells.length; i++) {
+            var c = cells[i];
+            if (c.inside && Math.random() < 0.012) c.g = pick(DENSE);
+            var dx = c.x - ptr.x, dy = c.y - ptr.y, d2 = dx * dx + dy * dy;
+            if (d2 < R2) {
+              var d = Math.sqrt(d2) || 1, f = (1 - d / R) * 2.2;
+              c.vx += dx / d * f; c.vy += dy / d * f;
+              if (c.inside && Math.random() < 0.2) c.g = pick(DENSE);
+            }
+            c.vx += (c.hx - c.x) * 0.06; c.vy += (c.hy - c.y) * 0.06;
+            c.vx *= 0.82; c.vy *= 0.82;
+            c.x += c.vx; c.y += c.vy;
+          }
+          draw();
+        }
+        requestAnimationFrame(step);
+      }
+
+      function setPtr(e) { var r = cv.getBoundingClientRect(); ptr.x = e.clientX - r.left; ptr.y = e.clientY - r.top; }
+      cv.addEventListener('pointermove', setPtr);
+      cv.addEventListener('pointerdown', setPtr);
+      cv.addEventListener('pointerleave', function () { ptr.x = ptr.y = -1e4; });
+      if ('IntersectionObserver' in window) new IntersectionObserver(function (en) { visible = en[0].isIntersecting; }).observe(cv);
+      document.getElementById('theme').addEventListener('click', function () { setTimeout(function () { readColors(); draw(); }, 0); });
+      var rt; window.addEventListener('resize', function () { clearTimeout(rt); rt = setTimeout(build, 150); });
+
+      (document.fonts && document.fonts.ready ? document.fonts.ready : Promise.resolve()).then(function () {
+        build();
+        if (!reduce) requestAnimationFrame(step);
+      });
+    })();
   </script>
 </body>
 </html>
