@@ -102,6 +102,12 @@
     }
     .field-head { text-align: center; padding: 0 16px; }
     .big { font-size: clamp(72px, 14vw, 132px); line-height: .9; letter-spacing: -0.06em; font-weight: 600; margin: 0; }
+    /* The "+" is a propeller: drawn bars so it spins around its true center */
+    .prop { position: relative; display: inline-block; width: .56em; height: .56em; margin-left: .04em; vertical-align: .08em; will-change: transform; }
+    .prop::before, .prop::after { content: ""; position: absolute; left: 50%; top: 50%; background: currentColor; border-radius: .01em; transform: translate(-50%, -50%); }
+    .prop::before { width: 100%; height: .105em; }
+    .prop::after { width: .105em; height: 100%; }
+    .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
     .big-sub { margin: 14px auto 0; max-width: 460px; font-size: clamp(18px, 2.6vw, 22px); line-height: 1.3; letter-spacing: -0.02em; font-weight: 500; color: var(--text); }
     .big-note { margin: 10px 0 0; font-size: 13px; color: var(--muted); }
     .rows { margin-top: 44px; display: grid; gap: 0; overflow: hidden; padding-bottom: var(--arc, 0px);
@@ -205,7 +211,7 @@
     <div class="rule" aria-hidden="true"></div>
     <section class="field" aria-labelledby="field-title">
       <div class="field-head">
-        <p class="big" id="field-title">5+</p>
+        <p class="big" id="field-title">5<span class="prop" id="prop"><span class="sr">+</span></span></p>
         <p class="big-sub">empresas globais com vulnerabilidades encontradas e reportadas.</p>
         <p class="big-note">Meta, X, TikTok, LinkedIn, Broadcom e algumas que ficam em segredo.</p>
       </div>
@@ -542,6 +548,29 @@
       addEventListener('pointermove', function (e) { px = e.clientX; py = e.clientY; kick(); }, { passive: true });
       addEventListener('scroll', kick, { passive: true });
       document.addEventListener('pointerleave', function () { py = -1e4; kick(); });
+    })();
+  </script>
+  <script>
+    /* Propeller "+": scrolling spins it up, then it coasts to a stop */
+    (function () {
+      var el = document.getElementById('prop');
+      if (!el || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+      var angle = 0, vel = 0, lastY = scrollY, raf = 0;
+      function tick() {
+        angle += vel; vel *= 0.95;
+        // As it slows down, settle back into an upright "+".
+        var rest = Math.round(angle / 90) * 90, off = rest - angle;
+        if (Math.abs(vel) < 1.2) { vel += off * 0.012; vel *= 0.9; }
+        var done = Math.abs(vel) < 0.02 && Math.abs(off) < 0.1;
+        if (done) angle = rest;
+        el.style.transform = 'rotate(' + angle.toFixed(2) + 'deg)';
+        raf = done ? 0 : requestAnimationFrame(tick);
+      }
+      addEventListener('scroll', function () {
+        var dy = scrollY - lastY; lastY = scrollY;
+        vel = Math.max(-40, Math.min(40, vel + dy * 0.12));
+        if (!raf) raf = requestAnimationFrame(tick);
+      }, { passive: true });
     })();
   </script>
 </body>
