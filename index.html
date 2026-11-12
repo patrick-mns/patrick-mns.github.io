@@ -104,10 +104,10 @@
     .big { font-size: clamp(72px, 14vw, 132px); line-height: .9; letter-spacing: -0.06em; font-weight: 600; margin: 0; }
     .big-sub { margin: 14px auto 0; max-width: 460px; font-size: clamp(18px, 2.6vw, 22px); line-height: 1.3; letter-spacing: -0.02em; font-weight: 500; color: var(--text); }
     .big-note { margin: 10px 0 0; font-size: 13px; color: var(--muted); }
-    .rows { margin-top: 44px; display: grid; gap: 0;
+    .rows { margin-top: 44px; display: grid; gap: 0; overflow: hidden; padding-bottom: var(--arc, 0px);
       -webkit-mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent);
               mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent); }
-    .row { overflow: hidden; padding: 14px 0; }
+    .row { padding: 14px 0; }
     .track { display: flex; width: max-content; animation: drift var(--dur, 60s) linear infinite; }
     .row.rev .track { animation-direction: reverse; }
     @keyframes drift { to { transform: translateX(-50%); } }
@@ -115,6 +115,7 @@
       display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0;
       margin: 0 34px; font-weight: 600; font-size: 17px; letter-spacing: -0.02em;
       color: var(--text); opacity: .85; white-space: nowrap;
+      transform: translateY(calc(var(--j, 0px) + var(--ay, 0px))) rotate(calc(var(--r, 0deg) + var(--ar, 0deg)));
     }
     .logo svg { width: 22px; height: 22px; fill: currentColor; flex-shrink: 0; }
     .logo.secret { color: var(--muted); font-weight: 500; font-size: 15px; opacity: 1; }
@@ -351,11 +352,35 @@
         var items = row.map(function (k) { return logo(k ? B[k] : null); });
         var set = items.concat(items).map(function (h) {
           var rot = (rnd() * 10 - 5).toFixed(1), y = Math.round(rnd() * 14 - 7);
-          return h.replace('class="logo', 'style="transform:translateY(' + y + 'px) rotate(' + rot + 'deg)" class="logo');
+          return h.replace('class="logo', 'style="--j:' + y + 'px;--r:' + rot + 'deg" class="logo');
         }).join('');
         return '<div class="row' + (i % 2 ? ' rev' : '') + '"><div class="track" style="--dur:' + durs[i] + 's;animation-delay:-' + (i * 13) + 's">' + set + set + '</div></div>';
       }).join('');
-      document.getElementById('rows').innerHTML = html;
+      var box = document.getElementById('rows');
+      box.innerHTML = html;
+
+      // Bend the rows into a smile-shaped arc: each logo drops and tilts by where it is across the field.
+      var logos = [].slice.call(box.querySelectorAll('.logo')), amp = 0, cx = 0, half = 1, on = true;
+      function measure() {
+        var b = box.getBoundingClientRect();
+        cx = b.left + b.width / 2; half = b.width / 2;
+        amp = Math.min(110, b.width * 0.06);
+        box.style.setProperty('--arc', Math.round(amp) + 'px');
+      }
+      function bend() {
+        for (var i = 0; i < logos.length; i++) {
+          var el = logos[i], r = el.getBoundingClientRect();
+          var u = (r.left + r.width / 2 - cx) / half;
+          if (u < -1.4 || u > 1.4) continue;
+          el.style.setProperty('--ay', (amp * (1 - u * u)).toFixed(1) + 'px');
+          el.style.setProperty('--ar', (Math.atan(-2 * amp * u / half) * 57.3).toFixed(2) + 'deg');
+        }
+      }
+      function loop() { if (on) bend(); requestAnimationFrame(loop); }
+      measure(); bend();
+      addEventListener('resize', function () { measure(); bend(); });
+      if ('IntersectionObserver' in window) new IntersectionObserver(function (e) { on = e[0].isIntersecting; }).observe(box);
+      if (!matchMedia('(prefers-reduced-motion: reduce)').matches) requestAnimationFrame(loop);
     })();
     // Logos in the bug bounty list (same Simple Icons paths as the logo field).
     document.querySelectorAll('[data-logo]').forEach(function (el) {
